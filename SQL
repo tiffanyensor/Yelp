@@ -48,10 +48,10 @@ CREATE TABLE Yelp_tip
 Rownumber SERIAL PRIMARY KEY,
 Tip_text VARCHAR(9999),
 Tip_date TIMESTAMP,
-Likes INT
+Likes INT,
 Business_id VARCHAR(100),
 User_id VARCHAR(100)
-};
+);
 
 -- ======================
 -- TRUNCATE TABLE
