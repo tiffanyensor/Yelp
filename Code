@@ -12,7 +12,7 @@ Created on Tue Jul 31 17:34:06 2018
 
 ########
 
-SQL_password = 
+SQL_password =
 
 #######
 
@@ -39,14 +39,14 @@ import psycopg2
 def postgres_command(string_command, password=SQL_password):
     try:
         conn = psycopg2.connect(host="localhost",database="Yelp", user="postgres", password=password)
-    except:
-        print("Unable to connect to PostGres database")
+    except (Exception, psycopg2.DatabaseError) as error:
+        print("Unable to connect to PostGres database: ",error)
     cur = conn.cursor()
     try:
         cur.execute(string_command)
         conn.commit()
-    except:
-        print("Command not executed: ", string_command)
+    except (Exception, psycopg2.DatabaseError) as error:
+        print("Command not executed: ",error)
     cur.close()
     conn.close()
     
@@ -54,26 +54,19 @@ def postgres_command(string_command, password=SQL_password):
 def postgres_query(string_command, password=SQL_password):
     try:
         conn = psycopg2.connect(host="localhost",database="Yelp", user="postgres", password=password)
-    except:
-        print("Unable to connect to PostGres database")
+    except (Exception, psycopg2.DatabaseError) as error:
+        print("Unable to connect to PostGres database: ",error)
     cur = conn.cursor()
     try:
         cur.execute(string_command)
         conn.commit()
-    except:
-        print("Command not executed")
+    except (Exception, psycopg2.DatabaseError) as error:
+        print("Command not executed: ",error)
     rows = cur.fetchall()
     cur.close()
     conn.close()
     return rows
 
-"""
-postgres_command("CREATE TABLE phonebook(phone VARCHAR(32), firstname VARCHAR(32), lastname VARCHAR(32), address VARCHAR(64));")
-postgres_command("INSERT INTO phonebook(phone, firstname, lastname, address) VALUES('123-456-7890', 'Bobby', 'F', 'Mexico');")
-postgres_query("SELECT * FROM phonebook")
-"""
-
-filename = 'yelp_academic_dataset_photo.json'
 
 def json_to_list(filename):
     # converts data in a json file to a list
@@ -81,18 +74,10 @@ def json_to_list(filename):
     for line in open(filename, 'r'):
         dict = json.loads(line)
         data.append(list(dict.values()))
-    header = list(dict.keys())
-    return [header, data]
-
-dataset = json_to_list('yelp_academic_dataset_photo.json')
+    return data
 
 
-
-def list_to_SQL_table(data, table_name, column_names, datatypes):
-    # data is [header, data]
-
-    
-    # First, create the table
+def create_table(table_name, column_names, datatypes):
     create = "CREATE TABLE "+table_name+" (RowNumber SERIAL, "
     n_col = len(column_names)
     for i in range(n_col):
@@ -101,66 +86,69 @@ def list_to_SQL_table(data, table_name, column_names, datatypes):
             create = create + ", "
     create = create + ");"
     print(create)
-
     postgres_command(create)
 
-    # Insert data into table
-#    for row in range(len(dataset[1])):
-    for row in range(1000):
-        insert_row = "INSERT INTO "+table_name+" ("
-        for i in range(n_col):
-            insert_row = insert_row + column_names[i]
-            if i < n_col-1:
-                insert_row = insert_row + ", "
-        insert_row = insert_row + ") VALUES ("
-        for i in range(n_col):
-            if "VARCHAR" in datatypes[i]:
-                insert_row = insert_row +"'"
-            insert_row = insert_row + data[1][row][i]
-            if "VARCHAR" in datatypes[i]:
-                insert_row = insert_row +"'"
-            if i < n_col-1:
-                insert_row = insert_row + ", "  
-        insert_row = insert_row+");"
 
-        if len(dataset[1])/100 == row:
-            print("---------- 1% done ----------")  
+def insert_data(data, table_name, column_names):
+    insert_statement = "INSERT INTO "+table_name+"("
+    insert_statement = insert_statement + ", ".join(column_names)
+    insert_statement = insert_statement+") VALUES("
+    insert_statement = insert_statement + "%" + ",%".join("s"*len(column_names))
+    insert_statement = insert_statement + ");"    
+    # print (insert_statement)
+    try:
+        # connect to the PostgreSQL database
+        conn = psycopg2.connect(host="localhost",database="Yelp", user="postgres", password=SQL_password)
+        # create a new cursor
+        cur = conn.cursor()
+        # execute the INSERT statement
+        cur.executemany(insert_statement,data)
+        # commit the changes to the database
+        conn.commit()
+        # close communication with the database
+        cur.close()
+    except (Exception, psycopg2.DatabaseError) as error:
+        print(error)
+    finally:
+        if conn is not None:
+            conn.close()    
+    
 
-        if len(dataset[1])/20 == row:
-            print("---------- 5% done ----------")  
-
-        if len(dataset[1])/10 == row:
-            print("---------- 10% done ----------")  
- 
-        if len(dataset[1])/4 == row:
-            print("---------- 25% done ----------")
-     
-        if len(dataset[1])/2 == row:
-            print("---------- 50% done ----------")
-            
-#        print(insert_row)
-
-        postgres_command(insert_row)
-
-
-
-# PHOTOS TABLE
-table_name = "photos"
-col_names = ["photo_id", "business_id", "caption", "label"]
-col_types = ["VARCHAR(100)", "VARCHAR(100)", "VARCHAR(9999)", "VARCHAR(50)"]
-list_to_SQL_table(dataset, table_name, col_names, col_types)
-# postgres_command("DROP TABLE photos;")
-# postgres_command("TRUNCATE TABLE photos;")
-        
-
-# BUSINESS TABLE
+# Business Table
+#--------------------------------------
+dataset = json_to_list('yelp_academic_dataset_business.json')
+# covert dictionary columns to text
+for row in dataset:
+    row[12] = json.dumps(row[12])
+    row[14] = json.dumps(row[14])
 table_name = "business"
 col_names = ["business_id", "name", "neighbourhood", "address", "city", "state_province", "postal_code", "latitude", "longitude", "stars", "review_count", "is_open", "attributes", "categories", "hours"]
-col_types = ["VARCHAR(100)", "VARCHAR(500)", "VARCHAR(100)", "VARCHAR(1000), VARCHAR(100), VARCHAR(3), VARCHAR(7), VARCHAR(50), VARCHAR(50), INT, INT, INT, VARCHAR(9999), VARCHAR(100), VARCHAR(9999)"]
-list_to_SQL_table(dataset, table_name, col_names, col_types)
+col_types = ["VARCHAR(100)", "VARCHAR(500)", "VARCHAR(100)", "VARCHAR(1000)", "VARCHAR(100)", "VARCHAR(3)", "VARCHAR(50)", "VARCHAR(50)", "VARCHAR(50)", "INT", "INT", "INT", "VARCHAR(9999)", "VARCHAR(1000)", "VARCHAR(9999)"]
+create_table(table_name, col_names, col_types)
+insert_data(dataset, table_name, col_names)
 # postgres_command("DROP TABLE business;")
 # postgres_command("TRUNCATE TABLE business;")
       
+
+
+# Checkins Table
+#--------------------------------------
+dataset = json_to_list('yelp_academic_dataset_checkin.json')
+
+
+
+# Photos Table
+#--------------------------------------
+dataset = json_to_list('yelp_academic_dataset_photo.json')
+table_name = "photos"
+col_names = ["photo_id", "business_id", "caption", "label"]
+col_types = ["VARCHAR(100)", "VARCHAR(100)", "VARCHAR(9999)", "VARCHAR(50)"]
+create_table(table_name, col_names, col_types)
+insert_data(dataset, table_name, col_names)
+# postgres_command("DROP TABLE photos;")
+# postgres_command("TRUNCATE TABLE photos;")
+
+
 
 
 
@@ -334,7 +322,6 @@ for index, word in enumerate(top_10_chipotle_words):
 # EXTRA: IDEAS
 #------------------------------------------------------------------------------
 #------------------------------------------------------------------------------
-
 
 
 #------------------------------------------------------------------------------
