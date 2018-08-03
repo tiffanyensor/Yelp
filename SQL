@@ -10,32 +10,25 @@ CREATE DATABASE "Yelp"
     LC_CTYPE = 'C'
     TABLESPACE = pg_default
     CONNECTION LIMIT = -1;
+
+
+-- ======================
+-- DROP TABLES
+-- ======================
     
-    
+DROP TABLE Yelp_business;    
+
 -- ======================
 -- CREATE TABLES
 -- ======================
 
-{"business_id":"Apn5Q_b6Nz61Tq4XzPdf9A","name":"Minhas Micro Brewery","neighborhood":"","address":"1314 44 Avenue NE",
-"city":"Calgary","state":"AB","postal_code":"T2E 6L6","latitude":51.0918130155,"longitude":-114.031674872,
-"stars":4.0,"review_count":24,"is_open":1,
-"attributes":{"BikeParking":"False","BusinessAcceptsCreditCards":"True",
-"BusinessParking":"{'garage': False, 'street': True, 'validated': False, 'lot': False, 'valet': False}",
-"GoodForKids":"True","HasTV":"True","NoiseLevel":"average","OutdoorSeating":"False",
-"RestaurantsAttire":"casual","RestaurantsDelivery":"False",
-"RestaurantsGoodForGroups":"True","RestaurantsPriceRange2":"2","RestaurantsReservations":"True",
-"RestaurantsTakeOut":"True"},
-
-"categories":"Tours, Breweries, Pizza, Restaurants, Food, Hotels & Travel","hours":{"Monday":"8:30-17:0","Tuesday":"11:0-21:0","Wednesday":"11:0-21:0","Thursday":"11:0-21:0","Friday":"11:0-21:0","Saturday":"11:0-21:0"}}
-
-
 CREATE TABLE Yelp_business
 (
-Rownumber SERIAL,
+Rownumber SERIAL PRIMARY KEY,
 Business_id VARCHAR(100),
 Business_name VARCHAR(100),
 Neighbourhood VARCHAR(100),
-Address VARCHAR(1000)
+Address VARCHAR(1000),
 City VARCHAR(100),
 State_province VARCHAR(3),
 Postal_code VARCHAR(7),
@@ -44,52 +37,10 @@ Longitude VARCHAR(100),
 Stars FLOAT,
 Review_count INT,
 Is_open BOOLEAN,
-Bike_parking BOOLEAN,
-Accepts_cc BOOLEAN,
-Garage_parking BOOLEAN,
-Street_parking BOOLEAN,
-Validated_parking BOOLEAN,
-Parking_lot BOOLEAN,
-Valet BOOLEAN,
-Good_for_kids BOOLEAN,
-Has_TV BOOLEAN,
-Noise_level VARCHAR(100),
-Outdoor_seating BOOLEAN,
-Attire VARCHAR(100),
-Delivery BOOLEAN,
-Good_for_groups BOOLEAN,
-Price_range INT,
-Reservations BOOLEAN,
-Takeout BOOLEAN,
-Categories VARCHAR(100),
-Monday_hours VARCHAR(100),
-Tuesday_hours VARCHAR(100),
-Wednesday_hours VARCHAR(100),
-Thursday_hours VARCHAR(100),
-Friday_hours VARCHAR(100),
-Saturday_hours VARCHAR(100),
-Sunday_hours VARCHAR(100)
+Attr JSON,
+Categories VARCHAR(1000),
+Hours JSON
 );
-
-CREATE TABLE yelp_photo
-(
-Photo_id VARCHAR(100),
-Business_id VARCHAR(100),
-Caption VARCHAR(1000),
-Label VARCHAR(100)
-);
-
-
-
--- ======================
--- DROP TABLE
--- ======================
-
-
--- ======================
--- CREATE WRK TABLE
--- ======================
-
 
 
 -- ======================
@@ -101,6 +52,7 @@ TRUNCATE TABLE table_name;
 -- ======================
 -- INSERT DATA
 -- ======================
+
 
 
 -- ======================
