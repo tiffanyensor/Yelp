@@ -1,0 +1,299 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+LIFT CO INTERVIEW ASSESSMENT
+
+Created on Tue Jul 31 17:34:06 2018
+
+@author: tiffanyensor
+"""
+
+
+
+########
+
+SQL_password =
+
+#######
+
+
+#------------------------------------------------------------------------------
+#------------------------------------------------------------------------------
+# IMPORTS
+#------------------------------------------------------------------------------
+#------------------------------------------------------------------------------
+
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+
+import json
+import psycopg2
+
+#------------------------------------------------------------------------------
+#------------------------------------------------------------------------------
+# 1. CONVERT DATA FROM JSON FILE TO POSTGRESQL TABLE
+#------------------------------------------------------------------------------
+#------------------------------------------------------------------------------
+
+
+filename = 'yelp_academic_dataset_photo.json'
+
+def json_to_list(filename):
+    # converts data in a json file to a list
+    data = []
+    for line in open(filename, 'r'):
+        dict = json.loads(line)
+        data.append(list(dict.values()))
+    header = list(dict.keys())
+    return [header, data]
+
+dataset = json_to_list('yelp_academic_dataset_photo.json')
+
+
+
+def postgres_command(string_command, password=SQL_password):
+    try:
+        conn = psycopg2.connect(host="localhost",database="Yelp", user="postgres", password=password)
+    except:
+        print("Unable to connect to PostGres database")
+    cur = conn.cursor()
+    try:
+        cur.execute(string_command)
+        conn.commit()
+    except:
+        print("Command not executed")
+    cur.close()
+    conn.close()
+    
+
+def postgres_query(string_command, password=SQL_password):
+    try:
+        conn = psycopg2.connect(host="localhost",database="Yelp", user="postgres", password=password)
+    except:
+        print("Unable to connect to PostGres database")
+    cur = conn.cursor()
+    try:
+        cur.execute(string_command)
+        conn.commit()
+    except:
+        print("Command not executed")
+    rows = cur.fetchall()
+    cur.close()
+    conn.close()
+    return rows
+    
+"""
+def postgres_command(string_command, password=SQL_password):
+    try:
+        conn = psycopg2.connect(host="localhost",database="Yelp", user="postgres", password="346109")
+    except:
+        print("Unable to connect to PostGres database")
+    cur = conn.cursor()
+    try:
+        cur.execute(string_command)
+        conn.commit()
+    except:
+        print("Command not executed; check your syntax")
+    rows = -1
+    if "select" in string_command.lower():
+        rows = cur.fetchall()
+    cur.close()
+    conn.close()
+    return rows
+"""
+    
+
+PostGreSQL_command(string_command)
+
+postgres_command("CREATE TABLE phonebook(phone VARCHAR(32), firstname VARCHAR(32), lastname VARCHAR(32), address VARCHAR(64));")
+postgres_command("INSERT INTO phonebook(phone, firstname, lastname, address) VALUES('123-456-7890', 'Bobby', 'F', 'Mexico');")
+postgres_query("SELECT * FROM phonebook")
+
+
+
+
+def list_to_SQL_table(list, table_name, db_name):
+
+
+
+
+
+
+
+"""
+def json_to_list(filename):
+    # converts data in a json file to a df (too slow)
+    df = pd.DataFrame()
+    data = []
+    for line in open(filename, 'r'):
+        dict = json.loads(line)
+        list_entry = list(dict.values())
+        data.append(list_entry)
+        header = list(dict.keys())
+    for j in range(len(header)):
+        for i in range(len(data)):
+            df[header[j]] = data[i][j]
+    return df
+"""        
+            
+
+
+
+# converting json dataset from dictionary to dataframe
+train = pd.DataFrame.from_dict(dict_train, orient='index')
+train.reset_index(level=0, inplace=True)
+
+#------------------------------------------------------------------------------
+#------------------------------------------------------------------------------
+# 2. FIND MOST POPULAR RESTAURANTS IN TORONTO
+#------------------------------------------------------------------------------
+#------------------------------------------------------------------------------
+
+# Read data from .csv into DataFrame
+business_data = pd.read_csv('yelp_business.csv')
+business_header = list(business_data)
+
+
+# Get all the Restaurants in Toronto
+
+toronto_restaurants=[]
+for i in range(0, len(business_data)):
+    if (business_data.city[i] == 'Toronto') and ("Restaurant" in str(business_data.categories[i])) and (business_data.is_open[i] == True):
+     #   print(business_data.name[i]," is a restaurant in toronto")
+        toronto_restaurants.append(business_data.iloc[i,:].values)
+
+toronto_restaurants = pd.DataFrame(toronto_restaurants, columns=business_header)
+        
+# Popular Restaurants should have lots of reviews (i.e., they are frequented often) and high ratings (i.e., people like them)
+sorted_toronto_restaurants = toronto_restaurants.sort_values(by="review_count", ascending=False)
+top_restaurants = sorted_toronto_restaurants.iloc[:,:]
+top_restaurants = top_restaurants.set_index(np.arange(len(top_restaurants.index)))    # re-index
+
+# plot top 20 restaurants: name vs rating
+plt.figure(1, figsize = (4,10))
+plt.gca().invert_yaxis()
+plt.axvline(x=4, color='red')
+plt.barh(top_restaurants['name'][0:20], top_restaurants['stars'][0:20])
+plt.title("20 Most Rated Toronto Restaurants")
+plt.xlabel("Rating")
+plt.savefig("Top20TorontoRestaurants.pdf", bbox_inches="tight")
+plt.show()
+
+# Top 10: let's say they need a 4 or 5 star rating
+
+top_10_list = []
+counter = 0
+i = 0
+
+while counter < 10:
+    if top_restaurants.stars[i] >= 4.0:
+        top_10_list.append(top_restaurants.name[i])
+        counter += 1
+    i += 1
+  
+
+print("The top 10 most popular Toronto restaurants are: ")
+for i, val in enumerate(top_10_list):
+    print(i+1,". ",val)
+
+
+
+
+#------------------------------------------------------------------------------
+#------------------------------------------------------------------------------
+# 4. TOP 10 WORDS IN CHIPOTLE REVIEWS
+#------------------------------------------------------------------------------
+#------------------------------------------------------------------------------
+# do lemmatized and not (difflib for sp mistake)
+    
+    
+    
+# find the business_id for Chipotle
+chipotle_business_id = []
+for i in range(len(business_data)):
+    if "Chipotle" in business_data.name[i]:
+        chipotle_business_id.append(business_data.business_id[i])
+
+
+import csv
+
+with open('yelp_review.csv', encoding="utf-8-sig") as f:
+  reader = csv.reader(f)
+  review_header = next(reader)  # gets the first line
+  print(review_header)
+  i=0
+  review_data=[]
+  # file is huge, so start with one section
+  while i<50000:
+      nextline = next(reader)
+      review_data.append(nextline)
+      i += 1
+  f.close()
+  
+chipotle_review = []
+chipotle_stars = []
+
+for i in range(0, len(review_data)):
+    current_id = review_data[i][2]
+    if current_id in chipotle_business_id:
+        chipotle_review.append(review_data[i][5])
+        chipotle_stars.append(review_data[i][3])   # might not need this
+
+def simple_tokenizer(review):
+    review = review.lower()                        # convert to lowercase
+    tokens = review.split()                        # split into words
+    tokens = [t for t in tokens if t.isalpha()]    # remove non-alpha characters  
+    return tokens
+
+# get a list of tokenzied words
+tokenized_words =[]
+for rev in chipotle_review:
+    tokens = simple_tokenizer(rev)
+    for word in tokens:
+        tokenized_words.append(word)
+  
+# Count occurance of each word in tokenized_words and order bt frequency
+from collections import Counter
+word_count = Counter(tokenized_words).most_common()
+top_10_chipotle_words = [word[0] for word in word_count[:10]]
+
+print("The top 10 most frequent words in the Chipotle reviews are :")
+for index, word in enumerate(top_10_chipotle_words):
+    print(index+1,". ",word)
+
+# from an analytics point of view, this is not very helpful.
+# we should remove stopwords, lemmatize, and stem to get a better idea of the
+# important words
+    
+from nltk.corpus import stopwords
+stop_words = set(stopwords.words('english'))
+
+new_tokenized_words = []
+for word in tokenized_words:
+    if word not in stop_words:
+        new_tokenized_words.append(word)
+    
+    
+# Count occurance of each word in tokenized_words and order bt frequency
+word_count = Counter(new_tokenized_words).most_common()
+top_10_chipotle_words = [word[0] for word in word_count[:10]]
+
+print("The top 10 most frequent USEFUL words in the Chipotle reviews are :")
+for index, word in enumerate(top_10_chipotle_words):
+    print(index+1,". ",word)    
+
+
+#------------------------------------------------------------------------------
+#------------------------------------------------------------------------------
+# EXTRA: IDEAS
+#------------------------------------------------------------------------------
+#------------------------------------------------------------------------------
+
+
+#------------------------------------------------------------------------------
+#------------------------------------------------------------------------------
+
+#------------------------------------------------------------------------------
+#------------------------------------------------------------------------------
+
