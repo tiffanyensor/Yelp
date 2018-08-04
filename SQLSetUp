@@ -1,0 +1,192 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+LIFT CO INTERVIEW ASSESSMENT
+
+Created on Tue Jul 31 17:34:06 2018
+@author: tiffanyensor
+"""
+
+########
+SQL_password = "password"
+#######
+
+
+#------------------------------------------------------------------------------
+#------------------------------------------------------------------------------
+# IMPORTS
+#------------------------------------------------------------------------------
+#------------------------------------------------------------------------------
+
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+
+import json
+import psycopg2
+
+#------------------------------------------------------------------------------
+#------------------------------------------------------------------------------
+# 1. CONVERT DATA FROM JSON FILE TO POSTGRESQL TABLE
+#------------------------------------------------------------------------------
+#------------------------------------------------------------------------------
+
+def postgres_command(string_command, password=SQL_password):
+    try:
+        conn = psycopg2.connect(host="localhost",database="Yelp", user="postgres", password=password)
+    except (Exception, psycopg2.DatabaseError) as error:
+        print("Unable to connect to PostGres database: ",error)
+    cur = conn.cursor()
+    try:
+        cur.execute(string_command)
+        conn.commit()
+    except (Exception, psycopg2.DatabaseError) as error:
+        print("Command not executed: ",error)
+    cur.close()
+    conn.close()
+
+def json_to_list(filename):
+    # converts data in a json file to a list
+    counter = 0
+    data = []
+    for line in open(filename, 'r'):
+        dict = json.loads(line)
+        data.append(list(dict.values()))
+    print("Column names: ", list(dict.keys()))
+    return data
+
+
+def create_table(table_name, column_names, datatypes):
+    create = "CREATE TABLE "+table_name+" (RowNumber SERIAL, "
+    n_col = len(column_names)
+    for i in range(n_col):
+        create = create + column_names[i]+" "+datatypes[i]
+        if i < n_col-1:
+            create = create + ", "
+    create = create + ");"
+    print(create)
+    postgres_command(create)
+
+
+def insert_data(data, table_name, column_names):
+    insert_statement = "INSERT INTO "+table_name+"("
+    insert_statement = insert_statement + ", ".join(column_names)
+    insert_statement = insert_statement+") VALUES("
+    insert_statement = insert_statement + "%" + ",%".join("s"*len(column_names))
+    insert_statement = insert_statement + ");"    
+    # connect to the PostgreSQL database and execute insert statement
+    conn = psycopg2.connect(host="localhost",database="Yelp", user="postgres", password=SQL_password)
+    cur = conn.cursor()
+    cur.executemany(insert_statement,data)
+    conn.commit()
+    cur.close()
+    if conn is not None:
+        conn.close()    
+    
+
+# Business Table
+#--------------------------------------
+dataset = json_to_list('yelp_academic_dataset_business.json')
+# covert dictionary columns to text
+for row in dataset:
+    row[12] = json.dumps(row[12])
+    row[14] = json.dumps(row[14])
+table_name = "business"
+col_names = ["business_id", "name", "neighbourhood", "address", "city", "state_province", "postal_code", "latitude", "longitude", "stars", "review_count", "is_open", "attributes", "categories", "hours"]
+col_types = ["VARCHAR(100)", "VARCHAR(500)", "VARCHAR(100)", "VARCHAR(1000)", "VARCHAR(100)", "VARCHAR(3)", "VARCHAR(50)", "VARCHAR(50)", "VARCHAR(50)", "INT", "INT", "INT", "VARCHAR(9999)", "VARCHAR(1000)", "VARCHAR(9999)"]
+create_table(table_name, col_names, col_types)
+insert_data(dataset, table_name, col_names)
+# postgres_command("DROP TABLE business;")
+# postgres_command("TRUNCATE TABLE business;")
+      
+
+
+# Checkins Table
+#--------------------------------------
+dataset = json_to_list('yelp_academic_dataset_checkin.json')
+# covert dictionary columns to text
+for row in dataset:
+    row[0] = json.dumps(row[0])
+table_name = "checkins"
+col_names = ["time", "business_id"]
+col_types = ["VARCHAR(5000)", "VARCHAR(100)"]
+create_table(table_name, col_names, col_types)
+insert_data(dataset, table_name, col_names)
+# postgres_command("DROP TABLE checkins;")
+# postgres_command("TRUNCATE TABLE checkins;")
+
+
+# Photos Table
+#--------------------------------------
+dataset = json_to_list('yelp_academic_dataset_photo.json')
+table_name = "photos"
+col_names = ["photo_id", "business_id", "caption", "label"]
+col_types = ["VARCHAR(100)", "VARCHAR(100)", "VARCHAR(9999)", "VARCHAR(50)"]
+create_table(table_name, col_names, col_types)
+insert_data(dataset, table_name, col_names)
+# postgres_command("DROP TABLE photos;")
+# postgres_command("TRUNCATE TABLE photos;")
+
+
+# Review Table
+#--------------------------------------
+
+
+filename = 'yelp_academic_dataset_review.json'
+table_name = "reviews"
+col_names = ["review_id", "uder_id", "business_id", "stars", "review_date", "review_text", "useful", "funny", "cool"]
+col_types = ["VARCHAR(100)", "VARCHAR(100)", "VARCHAR(100)", "FLOAT", "DATE", "VARCHAR(9999)", "INT", "INT", "INT"]
+
+create_table(table_name, col_names, col_types)
+
+
+
+def insert_json_in_sections(filename, table_name, column_names):
+    full_counter = 0
+    counter = 0
+    current_section =[]
+    for line in open(filename, 'r'):
+        dict = json.loads(line)
+        current_section.append(list(dict.values()))
+        counter = counter + 1   
+        # add the data in 100,000 row chunks
+        if counter == 100000:
+            insert_data(current_section, table_name, column_names)                    
+            counter = 0
+            del current_section[:]
+            current_section=[]
+            full_counter = full_counter + 100000
+            print(full_counter," rows have been uploaded.")
+    # everything remaining 
+    insert_data(current_section, table_name, column_names) 
+   
+insert_json_in_sections(filename, table_name, col_names)         
+
+
+# postgres_command("DROP TABLE reviews;")
+# postgres_command("TRUNCATE TABLE reviews;")
+
+
+# Tips Table
+#--------------------------------------
+dataset = json_to_list('yelp_academic_dataset_tip.json')
+table_name = "tips"
+col_names = ["tip_text", "tip_date", "likes", "business_id", "user_id"]
+col_types = ["VARCHAR(9999)", "DATE", "INT", "VARCHAR(100)", "VARCHAR(100)"]
+create_table(table_name, col_names, col_types)
+insert_data(dataset, table_name, col_names)
+# postgres_command("DROP TABLE tips;")
+# postgres_command("TRUNCATE TABLE tips;")
+
+
+# User Table
+#--------------------------------------
+dataset = json_to_list('yelp_academic_dataset_user.json')
+table_name = "users"
+col_names = ['user_id', 'user_name', 'review_count', 'yelping_since', 'friends', 'useful', 'funny', 'cool', 'fans', 'elite', 'average_stars', 'compliment_hot', 'compliment_more', 'compliment_profile', 'compliment_cute', 'compliment_list', 'compliment_note', 'compliment_plain', 'compliment_cool', 'compliment_funny', 'compliment_writer', 'compliment_photos']
+col_types = ["VARCHAR(100)", "VARCHAR(100)", "INT", "DATE", "VARCHAR(999999)", "INT", "INT", "INT", "INT", "VARCHAR(1000)", "FLOAT", "INT", "INT", "INT", "INT", "INT", "INT", "INT", "INT", "INT", "INT", "INT"]
+create_table(table_name, col_names, col_types)
+insert_data(dataset, table_name, col_names)
+# postgres_command("DROP TABLE users;")
+# postgres_command("TRUNCATE TABLE users;")
+
