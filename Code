@@ -1,8 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-LIFT CO INTERVIEW ASSESSMENT
-
 Created on Tue Jul 31 17:34:06 2018
 
 @author: tiffanyensor
@@ -30,9 +28,12 @@ from collections import Counter
 from nltk.corpus import stopwords
 from nltk.stem import WordNetLemmatizer
 
+from mpl_toolkits.basemap import Basemap
+import gmplot
+
 #------------------------------------------------------------------------------
 #------------------------------------------------------------------------------
-# 1. CONVERT DATA FROM JSON FILE TO POSTGRESQL TABLE
+# SQL FUNCTIONS
 #------------------------------------------------------------------------------
 #------------------------------------------------------------------------------
 
@@ -58,18 +59,30 @@ def postgres_query(string_command, password=SQL_password):
 #------------------------------------------------------------------------------
 #------------------------------------------------------------------------------
 
-# Get open restaurants in Toronto and order by number of reviews
-# remove bakeries, etc?
-data = postgres_query("SELECT name, city, review_count, stars, categories FROM business WHERE city = 'Toronto' AND is_open = 1 AND categories LIKE '%Restaurant%' ORDER BY review_count DESC LIMIT 100;")
+# A popular restaurant should be: open, 
 
-# Plot top 20 restaurants: name vs rating
-plt.figure(1, figsize = (4,10))
+# Get open restaurants in Toronto and order by number of positive reviews
+# where positive review >= 4
+data = postgres_query("""SELECT business.name, COUNT(*) AS n_pos_rev FROM business
+                      JOIN reviews on reviews.business_id = business.business_id
+                      WHERE reviews.stars >= 4
+                      AND business.city LIKE 'Toronto'
+                      AND business.is_open = 1
+                      AND business.categories LIKE '%Restaurant%'
+                      GROUP BY business.name
+                      ORDER BY COUNT(*) DESC;
+                      """)
+
+
+# Plot top 10 restaurants: name vs number of positive rating
+# show avg rating somehow?
+# in the last year?
+plt.figure(1, figsize = (5,8))
 plt.gca().invert_yaxis()
-plt.axvline(x=4, color='red')
-plt.barh(data.name[:20], data.stars[:20])
-plt.title("20 Most Rated Toronto Restaurants")
-plt.xlabel("Rating")
-plt.savefig("Top20TorontoRestaurants.pdf", bbox_inches="tight")
+plt.barh(data.name[:10], data.n_pos_rev[:10])
+plt.title("Top 10 Popular Restaurants in Toronto")
+plt.xlabel("Number of Positive Reviews")
+plt.savefig("PopularTorontoRestaurants.pdf", bbox_inches="tight")
 plt.show()
 
 # Top 10: let's say they need a 4 or 5 star rating
@@ -260,21 +273,91 @@ bakeries = postgres_query("""SELECT name, latitude, longitude, categories
                           WHERE city LIKE 'Toronto'
                           AND categories LIKE '%Bakeries%';""")
 
+# Use Basemap to plot a map of Toronto with bakery locations identified
+
+gmap1 = gmplot.GoogleMapPlotter(43.7, -79.39, 13)
+gmap1.scatter(bakeries["latitude"], bakeries["longitude"])
+gmap1.draw('map.html')
+
+
+plt.figure(figsize=(10,8))
+
+
+
+
+
+
+
+
+plt.savefig('bakery_map.pdf')
+
+
+
+
+plt.figure(figsize = (8,6))
 plt.scatter(bakeries["latitude"], bakeries["longitude"])
+#plt.xlim(43.6, 43.84)
+#plt.ylim(-79.5, -79.2)
 plt.show()
 
 
 #------------------------------------------------------------------------------
 #------------------------------------------------------------------------------
-# EXTRA: IDEAS
+# EXTRA: The most popular restaurant in Toronto is Pai Northern Thai
+# Kitchen. How have their reviews changed over the years?
 #------------------------------------------------------------------------------
 #------------------------------------------------------------------------------
 
-# - FIND THE CITIES WITH HIGHEST AND LOWEST RESTAURANT STARS
-# - EXTRA: plot restaurants on a map of toronto, colour to indicate restaurant type or something like that
-# - choose a particular restaurant (something with lots of reviews: make a CAP curve or ROC to predict who will reccommend)
+def ratings_by_year(business_name):
+    
+    # replace SQL escape character
+    business_name = business_name.replace("'", "''")
+    
+    bus_data = postgres_query("""SELECT extract(year from reviews.review_date) as review_year, reviews.stars, COUNT(*)
+                          FROM reviews
+                          JOIN business ON reviews.business_id = business.business_id
+                          WHERE business.name LIKE '"""+business_name+"""'
+                          GROUP BY review_year, reviews.stars;
+                          """)
+    
+    if bus_data.empty:
+        print('There is no information on the business "'+business_name+'".')
+        return -1;
+    
+    bus_data = bus_data.fillna(0)
+    bus_data = bus_data.astype(int)
 
+    bus_data = bus_data.pivot(index="review_year", columns="stars", values="count")
+    years = bus_data.index
+    
+    # Set up plot area, leving room on the right for the legend
+#    fig = plt.figure()
+    ax = plt.subplot(111)
+    box = ax.get_position()
+    ax.set_position([box.x0, box.y0, box.width * 0.8, box.height])
 
+    # Stacked bar plots
+    p1=plt.bar(years, bus_data[1], color='red')
+    p2=plt.bar(years, bus_data[2], bottom=bus_data[1], color='gold')
+    p3=plt.bar(years, bus_data[3], bottom=bus_data[1]+bus_data[2], color='yellow')
+    p4=plt.bar(years, bus_data[4], bottom=bus_data[1]+bus_data[2]+bus_data[3], color='palegreen')
+    p5=plt.bar(years, bus_data[5], bottom=bus_data[1]+bus_data[2]+bus_data[3]+bus_data[4], color='mediumseagreen')
+
+    # Plot specifications
+    ax.legend((p1, p2, p3, p4, p5), ('1 Star', '2 Star', '3 Star', '4 Star', '5 Star'), loc = "upper left", bbox_to_anchor = (1, 1))
+    plt.title(business_name+" Ratings by Year")
+    plt.xlabel("Year")
+    plt.ylabel("Number of Reviews")
+    plt.savefig(business_name+"_Ratings_By_Year.pdf", bbox_inches="tight")
+    plt.show()
+
+# Try this out for a few restaurants
+ratings_by_year("Pai Northern Thai Kitchen")
+ratings_by_year("McDonalds")
+ratings_by_year("Subway")
+ratings_by_year("Mon Ami Gabi")
+ratings_by_year("Starbucks")
+ratings_by_year("ARIA Resort & Casino")
 
 #------------------------------------------------------------------------------
 #------------------------------------------------------------------------------
