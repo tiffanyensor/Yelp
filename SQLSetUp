@@ -93,7 +93,7 @@ for row in dataset:
     row[14] = json.dumps(row[14])
 table_name = "business"
 col_names = ["business_id", "name", "neighbourhood", "address", "city", "state_province", "postal_code", "latitude", "longitude", "stars", "review_count", "is_open", "attributes", "categories", "hours"]
-col_types = ["VARCHAR(100)", "VARCHAR(500)", "VARCHAR(100)", "VARCHAR(1000)", "VARCHAR(100)", "VARCHAR(3)", "VARCHAR(50)", "VARCHAR(50)", "VARCHAR(50)", "INT", "INT", "INT", "VARCHAR(9999)", "VARCHAR(1000)", "VARCHAR(9999)"]
+col_types = ["VARCHAR(100)", "VARCHAR(500)", "VARCHAR(100)", "VARCHAR(1000)", "VARCHAR(100)", "VARCHAR(3)", "VARCHAR(50)", "FLOAT", "FLOAT", "INT", "INT", "INT", "VARCHAR(9999)", "VARCHAR(1000)", "VARCHAR(9999)"]
 create_table(table_name, col_names, col_types)
 insert_data(dataset, table_name, col_names)
 # postgres_command("DROP TABLE business;")
