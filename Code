@@ -8,12 +8,8 @@ Created on Tue Jul 31 17:34:06 2018
 @author: tiffanyensor
 """
 
-
-
 ########
-
-SQL_password = 
-
+SQL_password = 'password'
 #######
 
 
@@ -27,8 +23,12 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 
-import json
 import psycopg2
+
+from collections import Counter
+
+from nltk.corpus import stopwords
+from nltk.stem import WordNetLemmatizer
 
 #------------------------------------------------------------------------------
 #------------------------------------------------------------------------------
@@ -36,298 +36,130 @@ import psycopg2
 #------------------------------------------------------------------------------
 #------------------------------------------------------------------------------
 
-def postgres_command(string_command, password=SQL_password):
-    try:
-        conn = psycopg2.connect(host="localhost",database="Yelp", user="postgres", password=password)
-    except (Exception, psycopg2.DatabaseError) as error:
-        print("Unable to connect to PostGres database: ",error)
-    cur = conn.cursor()
-    try:
-        cur.execute(string_command)
-        conn.commit()
-    except (Exception, psycopg2.DatabaseError) as error:
-        print("Command not executed: ",error)
-    cur.close()
-    conn.close()
-    
 
 def postgres_query(string_command, password=SQL_password):
-    try:
-        conn = psycopg2.connect(host="localhost",database="Yelp", user="postgres", password=password)
-    except (Exception, psycopg2.DatabaseError) as error:
-        print("Unable to connect to PostGres database: ",error)
+    # takes in PostgreSQL command as text, outputs dataframe
+    conn = psycopg2.connect(host="localhost",database="Yelp", user="postgres", password=password)
     cur = conn.cursor()
-    try:
-        cur.execute(string_command)
-        conn.commit()
-    except (Exception, psycopg2.DatabaseError) as error:
-        print("Command not executed: ",error)
+    cur.execute(string_command)
+    conn.commit()
     rows = cur.fetchall()
+    colnames = [desc[0] for desc in cur.description]
     cur.close()
     conn.close()
+    rows =  [list(i) for i in rows]
+    rows = pd.DataFrame(rows, columns=colnames)
     return rows
 
-
-def json_to_list(filename):
-    # converts data in a json file to a list
-    data = []
-    for line in open(filename, 'r'):
-        dict = json.loads(line)
-        data.append(list(dict.values()))
-    print("Column names: ", list(dict.keys()))
-    return data
-
-
-def create_table(table_name, column_names, datatypes):
-    create = "CREATE TABLE "+table_name+" (RowNumber SERIAL, "
-    n_col = len(column_names)
-    for i in range(n_col):
-        create = create + column_names[i]+" "+datatypes[i]
-        if i < n_col-1:
-            create = create + ", "
-    create = create + ");"
-    print(create)
-    postgres_command(create)
-
-
-def insert_data(data, table_name, column_names):
-    insert_statement = "INSERT INTO "+table_name+"("
-    insert_statement = insert_statement + ", ".join(column_names)
-    insert_statement = insert_statement+") VALUES("
-    insert_statement = insert_statement + "%" + ",%".join("s"*len(column_names))
-    insert_statement = insert_statement + ");"    
-    # print (insert_statement)
-    try:
-        # connect to the PostgreSQL database and execute insert statement
-        conn = psycopg2.connect(host="localhost",database="Yelp", user="postgres", password=SQL_password)
-        cur = conn.cursor()
-        cur.executemany(insert_statement,data)
-        conn.commit()
-        cur.close()
-    except (Exception, psycopg2.DatabaseError) as error:
-        print(error)
-    finally:
-        if conn is not None:
-            conn.close()    
-    
-
-# Business Table
-#--------------------------------------
-dataset = json_to_list('yelp_academic_dataset_business.json')
-# covert dictionary columns to text
-for row in dataset:
-    row[12] = json.dumps(row[12])
-    row[14] = json.dumps(row[14])
-table_name = "business"
-col_names = ["business_id", "name", "neighbourhood", "address", "city", "state_province", "postal_code", "latitude", "longitude", "stars", "review_count", "is_open", "attributes", "categories", "hours"]
-col_types = ["VARCHAR(100)", "VARCHAR(500)", "VARCHAR(100)", "VARCHAR(1000)", "VARCHAR(100)", "VARCHAR(3)", "VARCHAR(50)", "VARCHAR(50)", "VARCHAR(50)", "INT", "INT", "INT", "VARCHAR(9999)", "VARCHAR(1000)", "VARCHAR(9999)"]
-create_table(table_name, col_names, col_types)
-insert_data(dataset, table_name, col_names)
-# postgres_command("DROP TABLE business;")
-# postgres_command("TRUNCATE TABLE business;")
-      
-
-
-# Checkins Table
-#--------------------------------------
-dataset = json_to_list('yelp_academic_dataset_checkin.json')
-# covert dictionary columns to text
-for row in dataset:
-    row[0] = json.dumps(row[0])
-table_name = "checkins"
-col_names = ["time", "business_id"]
-col_types = ["VARCHAR(5000)", "VARCHAR(100)"]
-create_table(table_name, col_names, col_types)
-insert_data(dataset, table_name, col_names)
-# postgres_command("DROP TABLE checkins;")
-# postgres_command("TRUNCATE TABLE checkins;")
-
-
-# Photos Table
-#--------------------------------------
-dataset = json_to_list('yelp_academic_dataset_photo.json')
-table_name = "photos"
-col_names = ["photo_id", "business_id", "caption", "label"]
-col_types = ["VARCHAR(100)", "VARCHAR(100)", "VARCHAR(9999)", "VARCHAR(50)"]
-create_table(table_name, col_names, col_types)
-insert_data(dataset, table_name, col_names)
-# postgres_command("DROP TABLE photos;")
-# postgres_command("TRUNCATE TABLE photos;")
-
-
-# Review Table
-#--------------------------------------
-dataset = json_to_list('yelp_academic_dataset_review.json')
-table_name = "reviews"
-col_names = []
-col_types = []
-create_table(table_name, col_names, col_types)
-insert_data(dataset, table_name, col_names)
-# postgres_command("DROP TABLE reviews;")
-# postgres_command("TRUNCATE TABLE reviews;")
-
-
-# Tips Table
-#--------------------------------------
-dataset = json_to_list('yelp_academic_dataset_tip.json')
-table_name = "tips"
-col_names = ["tip_text", "tip_date", "likes", "business_id", "user_id"]
-col_types = ["VARCHAR(9999)", "DATE", "INT", "VARCHAR(100)", "VARCHAR(100)"]
-create_table(table_name, col_names, col_types)
-insert_data(dataset, table_name, col_names)
-# postgres_command("DROP TABLE tips;")
-# postgres_command("TRUNCATE TABLE tips;")
-
-
-# User Table
-#--------------------------------------
-dataset = json_to_list('yelp_academic_dataset_user.json')
-table_name = "users"
-col_names = ['user_id', 'user_name', 'review_count', 'yelping_since', 'friends', 'useful', 'funny', 'cool', 'fans', 'elite', 'average_stars', 'compliment_hot', 'compliment_more', 'compliment_profile', 'compliment_cute', 'compliment_list', 'compliment_note', 'compliment_plain', 'compliment_cool', 'compliment_funny', 'compliment_writer', 'compliment_photos']
-col_types = ["VARCHAR(100)", "VARCHAR(100)", "INT", "DATE", "VARCHAR(999999)", "INT", "INT", "INT", "INT", "VARCHAR(1000)", "FLOAT", "INT", "INT", "INT", "INT", "INT", "INT", "INT", "INT", "INT", "INT", "INT"]
-create_table(table_name, col_names, col_types)
-insert_data(dataset, table_name, col_names)
-# postgres_command("DROP TABLE users;")
-# postgres_command("TRUNCATE TABLE users;")
-
-
-
-
-
-"""
-def json_to_list(filename):
-    # converts data in a json file to a df (too slow)
-    df = pd.DataFrame()
-    data = []
-    for line in open(filename, 'r'):
-        dict = json.loads(line)
-        list_entry = list(dict.values())
-        data.append(list_entry)
-        header = list(dict.keys())
-    for j in range(len(header)):
-        for i in range(len(data)):
-            df[header[j]] = data[i][j]
-    return df
-"""        
-            
-
-
-
-# converting json dataset from dictionary to dataframe
-train = pd.DataFrame.from_dict(dict_train, orient='index')
-train.reset_index(level=0, inplace=True)
-
 #------------------------------------------------------------------------------
 #------------------------------------------------------------------------------
-# 2. FIND MOST POPULAR RESTAURANTS IN TORONTO
+# 2. Top 10 restaurants in Toronto with highest popularity. You are free to
+# define your ‘popularity’, as long as it makes sense.
 #------------------------------------------------------------------------------
 #------------------------------------------------------------------------------
 
-# Read data from .csv into DataFrame
-business_data = pd.read_csv('yelp_business.csv')
-business_header = list(business_data)
+# Get open restaurants in Toronto and order by number of reviews
+# remove bakeries, etc?
+data = postgres_query("SELECT name, city, review_count, stars, categories FROM business WHERE city = 'Toronto' AND is_open = 1 AND categories LIKE '%Restaurant%' ORDER BY review_count DESC LIMIT 100;")
 
-
-# Get all the Restaurants in Toronto
-
-toronto_restaurants=[]
-for i in range(0, len(business_data)):
-    if (business_data.city[i] == 'Toronto') and ("Restaurant" in str(business_data.categories[i])) and (business_data.is_open[i] == True):
-     #   print(business_data.name[i]," is a restaurant in toronto")
-        toronto_restaurants.append(business_data.iloc[i,:].values)
-
-toronto_restaurants = pd.DataFrame(toronto_restaurants, columns=business_header)
-        
-# Popular Restaurants should have lots of reviews (i.e., they are frequented often) and high ratings (i.e., people like them)
-sorted_toronto_restaurants = toronto_restaurants.sort_values(by="review_count", ascending=False)
-top_restaurants = sorted_toronto_restaurants.iloc[:,:]
-top_restaurants = top_restaurants.set_index(np.arange(len(top_restaurants.index)))    # re-index
-
-# plot top 20 restaurants: name vs rating
+# Plot top 20 restaurants: name vs rating
 plt.figure(1, figsize = (4,10))
 plt.gca().invert_yaxis()
 plt.axvline(x=4, color='red')
-plt.barh(top_restaurants['name'][0:20], top_restaurants['stars'][0:20])
+plt.barh(data.name[:20], data.stars[:20])
 plt.title("20 Most Rated Toronto Restaurants")
 plt.xlabel("Rating")
 plt.savefig("Top20TorontoRestaurants.pdf", bbox_inches="tight")
 plt.show()
 
 # Top 10: let's say they need a 4 or 5 star rating
-
 top_10_list = []
 counter = 0
 i = 0
 
 while counter < 10:
-    if top_restaurants.stars[i] >= 4.0:
-        top_10_list.append(top_restaurants.name[i])
+    if data.stars[i] >= 4.0:
+        top_10_list.append(data.name[i])
         counter += 1
     i += 1
-  
+
 
 print("The top 10 most popular Toronto restaurants are: ")
 for i, val in enumerate(top_10_list):
     print(i+1,". ",val)
 
+#------------------------------------------------------------------------------
+#------------------------------------------------------------------------------
+# 3. How many Canadian residents reviewed the business “Mon Ami Gabi” in last 1 year?
+#------------------------------------------------------------------------------
+#------------------------------------------------------------------------------
+
+# Get users who reviewed "Mon Ami Gabi" in the last year:
+MAG_reviewers_this_year = postgres_query("""SELECT reviews.uder_id, business.name, reviews.review_date 
+                                         FROM reviews
+                                         JOIN business ON reviews.business_id = business.business_id
+                                         WHERE reviews.review_date > (current_date - interval '1 year') 
+                                         AND business.name = 'Mon Ami Gabi';
+                                         """)
+
+# The problem here is finding out which reviewers are Canadian, since reviewers
+# addresses are not known.
+
+# The country where each reviewer has reviewed the most restaurants is 
+# probably their home country.
 
 
-
-#------------------------------------------------------------------------------
-#------------------------------------------------------------------------------
-# 4. TOP 10 WORDS IN CHIPOTLE REVIEWS
-#------------------------------------------------------------------------------
-#------------------------------------------------------------------------------
-# do lemmatized and not (difflib for sp mistake)
     
+
     
-    
-# find the business_id for Chipotle
-chipotle_business_id = []
-for i in range(len(business_data)):
-    if "Chipotle" in business_data.name[i]:
-        chipotle_business_id.append(business_data.business_id[i])
+# number of revies by each user:
+# SELECT count(*) FROM reviews GROUP BY uder_id LIMIT 10;
+"""
+SELECT uder_id FROM reviews
+JOIN business on business.business_id = reviews.business_id
+GROUP BY uder_id 
+LIMIT 10;
+"""
 
 
-import csv
 
-with open('yelp_review.csv', encoding="utf-8-sig") as f:
-  reader = csv.reader(f)
-  review_header = next(reader)  # gets the first line
-  print(review_header)
-  i=0
-  review_data=[]
-  # file is huge, so start with one section
-  while i<50000:
-      nextline = next(reader)
-      review_data.append(nextline)
-      i += 1
-  f.close()
-  
-chipotle_review = []
-chipotle_stars = []
+"""
+SELECT business.name, reviews.review_text, reviews.review_date FROM reviews
+JOIN business ON reviews.business_id = business.business_id
+WHERE reviews.review_date > (current_date - interval '1 year') 
+AND business.name = 'Mon Ami Gabi'
+ORDER BY reviews.review_date
+LIMIT 100;
+"""
 
-for i in range(0, len(review_data)):
-    current_id = review_data[i][2]
-    if current_id in chipotle_business_id:
-        chipotle_review.append(review_data[i][5])
-        chipotle_stars.append(review_data[i][3])   # might not need this
 
+#------------------------------------------------------------------------------
+#------------------------------------------------------------------------------
+# 4. Top 10 most common words in the reviews of the business “Chipotle Mexican Grill”
+#------------------------------------------------------------------------------
+#------------------------------------------------------------------------------
+
+# Select all "Chipotle Mexican Grill" reviews from the SQL database
+data = postgres_query(" SELECT business.name, reviews.review_text FROM reviews JOIN business ON business.business_id = reviews.business_id WHERE business.name LIKE 'Chipotle Mexican Grill';")
+
+# Simple tokenizer function
 def simple_tokenizer(review):
     review = review.lower()                        # convert to lowercase
     tokens = review.split()                        # split into words
-    tokens = [t for t in tokens if t.isalpha()]    # remove non-alpha characters  
+    tokens = [t for t in tokens if t.isalpha()]    # remove non-alpha characters
     return tokens
 
-# get a list of tokenzied words
+
+# Get a list of tokenized words
 tokenized_words =[]
-for rev in chipotle_review:
+
+for rev in data["review_text"]:
     tokens = simple_tokenizer(rev)
     for word in tokens:
         tokenized_words.append(word)
-  
-# Count occurance of each word in tokenized_words and order bt frequency
-from collections import Counter
+    
+
+# Count occurance of each word in tokenized_words and order by frequency
 word_count = Counter(tokenized_words).most_common()
 top_10_chipotle_words = [word[0] for word in word_count[:10]]
 
@@ -338,23 +170,98 @@ for index, word in enumerate(top_10_chipotle_words):
 # from an analytics point of view, this is not very helpful.
 # we should remove stopwords, lemmatize, and stem to get a better idea of the
 # important words
-    
-from nltk.corpus import stopwords
-stop_words = set(stopwords.words('english'))
 
-new_tokenized_words = []
-for word in tokenized_words:
-    if word not in stop_words:
+stop_words = set(stopwords.words('english'))
+lemmatizer = WordNetLemmatizer()
+
+# Tokenizer function
+def better_tokenizer(review):
+    tokens = simple_tokenizer(review)
+    tokens = [lemmatizer.lemmatize(t) for t in tokens]      # lemmatize
+    tokens = [t for t in tokens if len(t) > 2]              # remove short words
+    tokens = [t for t in tokens if t not in stop_words]     # remove stopwords
+    return tokens
+
+new_tokenized_words =[]
+
+for rev in data["review_text"]:
+    tokens = better_tokenizer(rev)
+    for word in tokens:
         new_tokenized_words.append(word)
-    
-    
-# Count occurance of each word in tokenized_words and order bt frequency
+
+
+# Count occurance of each word in tokenized_words and order by frequency
 word_count = Counter(new_tokenized_words).most_common()
 top_10_chipotle_words = [word[0] for word in word_count[:10]]
 
 print("The top 10 most frequent USEFUL words in the Chipotle reviews are :")
 for index, word in enumerate(top_10_chipotle_words):
-    print(index+1,". ",word)    
+    print(index+1,". ",word)
+
+
+
+
+#------------------------------------------------------------------------------
+#------------------------------------------------------------------------------
+# 6. What’s the percentage of users, who reviewed “Mon Ami Gabi”, and also
+# reviewed at least 10 other restaurants located in Ontario?
+#------------------------------------------------------------------------------
+#------------------------------------------------------------------------------
+
+# Get users who reviewed "Mon Ami Gabi"
+MonAmiGabi_reviewers = postgres_query("""
+                           SELECT reviews.uder_id, reviews.business_id, business.name 
+                           FROM reviews 
+                           JOIN business on reviews.business_id = business.business_id 
+                           WHERE business.name LIKE 'Mon Ami Gabi';
+                           """)
+    
+    
+# Get review counts > 10 for each user for restaurants in Ontario
+Ontario_reviews = postgres_query("""SELECT reviews.uder_id, COUNT(*) from reviews
+                                 JOIN users ON users.user_id = reviews.uder_id
+                                 JOIN business ON business.business_id = reviews.business_id
+                                 WHERE business.state_province LIKE 'ON'
+                                 GROUP BY reviews.uder_id
+                                 HAVING COUNT(*) >= 10
+                                 """)
+
+# Number of users who reviewed "Mon Ami Gabi"
+n_MonAmiGabi_reviewers = MonAmiGabi_reviewers["uder_id"].count()
+
+# Total number of reviewers
+n_reviewers = postgres_query("SELECT COUNT(*) FROM reviews").values
+n_reviewers = n_reviewers[0][0]
+
+# Number of users who reviewed "Mon Ami Gabi" and at least 10 other restaurants in Ontario
+counter = 0
+
+for user in Ontario_reviews["uder_id"]:
+    if user in MonAmiGabi_reviewers["uder_id"].values:
+        counter = counter + 1
+
+# Calculate percent of MonAmiGabi reviewers that reviewed at least 10 ON restaurants
+percent_of_MonAmiGabi = counter/n_MonAmiGabi_reviewers
+
+percent_of_total = (counter*100.00/n_reviewers)
+
+print(round(percent_of_total,4),"% of reviewers reviewed both Mon Ami Gabi and at least 10 Ontario restaurants.")
+
+
+
+#------------------------------------------------------------------------------
+#------------------------------------------------------------------------------
+# EXTRA ANALYSIS: Plot the bakeries in Toronto on a map to see underserviced areas
+#------------------------------------------------------------------------------
+#------------------------------------------------------------------------------
+
+bakeries = postgres_query("""SELECT name, latitude, longitude, categories
+                          FROM business
+                          WHERE city LIKE 'Toronto'
+                          AND categories LIKE '%Bakeries%';""")
+
+plt.scatter(bakeries["latitude"], bakeries["longitude"])
+plt.show()
 
 
 #------------------------------------------------------------------------------
@@ -363,10 +270,14 @@ for index, word in enumerate(top_10_chipotle_words):
 #------------------------------------------------------------------------------
 #------------------------------------------------------------------------------
 
+# - FIND THE CITIES WITH HIGHEST AND LOWEST RESTAURANT STARS
+# - EXTRA: plot restaurants on a map of toronto, colour to indicate restaurant type or something like that
+# - choose a particular restaurant (something with lots of reviews: make a CAP curve or ROC to predict who will reccommend)
+
+
 
 #------------------------------------------------------------------------------
 #------------------------------------------------------------------------------
 
 #------------------------------------------------------------------------------
 #------------------------------------------------------------------------------
-
