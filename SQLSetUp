@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-LIFT CO INTERVIEW ASSESSMENT
 
 Created on Tue Jul 31 17:34:06 2018
+
 @author: tiffanyensor
 """
 
 ########
-SQL_password = "password"
+SQL_password = 'password'
 #######
 
 
@@ -32,22 +32,15 @@ import psycopg2
 #------------------------------------------------------------------------------
 
 def postgres_command(string_command, password=SQL_password):
-    try:
-        conn = psycopg2.connect(host="localhost",database="Yelp", user="postgres", password=password)
-    except (Exception, psycopg2.DatabaseError) as error:
-        print("Unable to connect to PostGres database: ",error)
+    conn = psycopg2.connect(host="localhost",database="Yelp", user="postgres", password=password)
     cur = conn.cursor()
-    try:
-        cur.execute(string_command)
-        conn.commit()
-    except (Exception, psycopg2.DatabaseError) as error:
-        print("Command not executed: ",error)
+    cur.execute(string_command)
+    conn.commit()
     cur.close()
     conn.close()
 
 def json_to_list(filename):
     # converts data in a json file to a list
-    counter = 0
     data = []
     for line in open(filename, 'r'):
         dict = json.loads(line)
@@ -74,7 +67,6 @@ def insert_data(data, table_name, column_names):
     insert_statement = insert_statement+") VALUES("
     insert_statement = insert_statement + "%" + ",%".join("s"*len(column_names))
     insert_statement = insert_statement + ");"    
-    # connect to the PostgreSQL database and execute insert statement
     conn = psycopg2.connect(host="localhost",database="Yelp", user="postgres", password=SQL_password)
     cur = conn.cursor()
     cur.executemany(insert_statement,data)
@@ -96,6 +88,7 @@ col_names = ["business_id", "name", "neighbourhood", "address", "city", "state_p
 col_types = ["VARCHAR(100)", "VARCHAR(500)", "VARCHAR(100)", "VARCHAR(1000)", "VARCHAR(100)", "VARCHAR(3)", "VARCHAR(50)", "FLOAT", "FLOAT", "INT", "INT", "INT", "VARCHAR(9999)", "VARCHAR(1000)", "VARCHAR(9999)"]
 create_table(table_name, col_names, col_types)
 insert_data(dataset, table_name, col_names)
+
 # postgres_command("DROP TABLE business;")
 # postgres_command("TRUNCATE TABLE business;")
       
