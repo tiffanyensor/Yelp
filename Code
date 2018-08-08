@@ -1,35 +1,37 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
+
 Created on Tue Jul 31 17:34:06 2018
 
 @author: tiffanyensor
 """
 
-########
-SQL_password = 'password'
-#######
 
-
-#------------------------------------------------------------------------------
-#------------------------------------------------------------------------------
-# IMPORTS
-#------------------------------------------------------------------------------
-#------------------------------------------------------------------------------
 
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 
 import psycopg2
+import operator
+import re
 
 from collections import Counter
 
 from nltk.corpus import stopwords
 from nltk.stem import WordNetLemmatizer
+from nltk.stem.porter import PorterStemmer
+from nltk.sentiment.vader import SentimentIntensityAnalyzer
 
-from mpl_toolkits.basemap import Basemap
-import gmplot
+from sklearn.feature_extraction.text import CountVectorizer
+from sklearn.model_selection import train_test_split
+from sklearn.linear_model import LogisticRegression
+from sklearn.metrics import confusion_matrix, accuracy_score, classification_report, r2_score
+from sklearn.naive_bayes import MultinomialNB
+from sklearn.feature_extraction.text import TfidfVectorizer
+
+SQL_password = 'password'
 
 #------------------------------------------------------------------------------
 #------------------------------------------------------------------------------
@@ -39,7 +41,9 @@ import gmplot
 
 
 def postgres_query(string_command, password=SQL_password):
-    # takes in PostgreSQL command as text, outputs dataframe
+    """
+    takes in PostgreSQL command as text, outputs dataframe
+    """
     conn = psycopg2.connect(host="localhost",database="Yelp", user="postgres", password=password)
     cur = conn.cursor()
     cur.execute(string_command)
@@ -59,11 +63,13 @@ def postgres_query(string_command, password=SQL_password):
 #------------------------------------------------------------------------------
 #------------------------------------------------------------------------------
 
-# A popular restaurant should be: open, 
+# A popular restaurant should be: open, with lots of 4 and 5 star reviews
 
 # Get open restaurants in Toronto and order by number of positive reviews
 # where positive review >= 4
-data = postgres_query("""SELECT business.name, COUNT(*) AS n_pos_rev FROM business
+    
+data = postgres_query("""SELECT business.name, COUNT(*) AS n_pos_rev
+                      FROM business
                       JOIN reviews on reviews.business_id = business.business_id
                       WHERE reviews.stars >= 4
                       AND business.city LIKE 'Toronto'
@@ -75,8 +81,7 @@ data = postgres_query("""SELECT business.name, COUNT(*) AS n_pos_rev FROM busine
 
 
 # Plot top 10 restaurants: name vs number of positive rating
-# show avg rating somehow?
-# in the last year?
+
 plt.figure(1, figsize = (5,8))
 plt.gca().invert_yaxis()
 plt.barh(data.name[:10], data.n_pos_rev[:10])
@@ -85,21 +90,7 @@ plt.xlabel("Number of Positive Reviews")
 plt.savefig("PopularTorontoRestaurants.pdf", bbox_inches="tight")
 plt.show()
 
-# Top 10: let's say they need a 4 or 5 star rating
-top_10_list = []
-counter = 0
-i = 0
 
-while counter < 10:
-    if data.stars[i] >= 4.0:
-        top_10_list.append(data.name[i])
-        counter += 1
-    i += 1
-
-
-print("The top 10 most popular Toronto restaurants are: ")
-for i, val in enumerate(top_10_list):
-    print(i+1,". ",val)
 
 #------------------------------------------------------------------------------
 #------------------------------------------------------------------------------
@@ -107,43 +98,61 @@ for i, val in enumerate(top_10_list):
 #------------------------------------------------------------------------------
 #------------------------------------------------------------------------------
 
-# Get users who reviewed "Mon Ami Gabi" in the last year:
-MAG_reviewers_this_year = postgres_query("""SELECT reviews.uder_id, business.name, reviews.review_date 
+# Get a list of people who have reviewed Mon Ami Gabi in the past year,
+# for people meeting this condition, get the states/provinces of the other places they've reviewed
+ 
+# The subquery gets the users who have reviews Mon Ami Gabi in the past year
+# the full query gets the state/provinces of all their review locations
+ 
+MAG_reviewers_this_year = postgres_query("""SELECT users.user_id, business.state_province 
                                          FROM reviews
-                                         JOIN business ON reviews.business_id = business.business_id
-                                         WHERE reviews.review_date > (current_date - interval '1 year') 
-                                         AND business.name = 'Mon Ami Gabi';
+                                         JOIN users on users.user_id = reviews.uder_id 
+                                         JOIN business on business.business_id = reviews.business_id
+                                         WHERE users.user_id IN (SELECT reviews.uder_id
+                                                                 FROM reviews
+                                                                 JOIN business ON reviews.business_id = business.business_id
+                                                                 WHERE reviews.review_date > (current_date - interval '1 year') 
+                                                                 AND business.name = 'Mon Ami Gabi'
+                                                                 )
+                                         ;
                                          """)
+                                         
+user_id_list = []
+for i in range(len(MAG_reviewers_this_year)):
+    if MAG_reviewers_this_year["user_id"][i] not in user_id_list:
+        user_id_list.append(MAG_reviewers_this_year["user_id"][i])                                  
 
-# The problem here is finding out which reviewers are Canadian, since reviewers
-# addresses are not known.
-
-# The country where each reviewer has reviewed the most restaurants is 
-# probably their home country.
+CAD_prov = ['AB', 'BC', 'MB', 'NB', 'NL', 'NS', 'NT', 'NU', 'ON', 'PE', 'QC', 'SK', 'YT']
 
 
+user_dict = {}
+
+# add users to dictionary
+for user in user_id_list:
+    user_dict[user] = {"CAD":0, "non_CAD":0}
+
+# for each user, count the number of Canadian businesses and non-Canadian
+# businessed they have reviewed
+for i in range(len(MAG_reviewers_this_year)):
+    user = MAG_reviewers_this_year["user_id"][i]
+    state = MAG_reviewers_this_year["state_province"][i]
+    if state in CAD_prov:
+        user_dict[user]["CAD"] = user_dict[user]["CAD"] + 1
+    else:
+        user_dict[user]["non_CAD"] = user_dict[user]["non_CAD"] + 1
     
-
     
-# number of revies by each user:
-# SELECT count(*) FROM reviews GROUP BY uder_id LIMIT 10;
-"""
-SELECT uder_id FROM reviews
-JOIN business on business.business_id = reviews.business_id
-GROUP BY uder_id 
-LIMIT 10;
-"""
+n_canadians = 0
+for user in user_dict:
+    if user_dict[user]["CAD"] > user_dict[user]["non_CAD"]:
+        n_canadians = n_canadians + 1
 
-
-
-"""
-SELECT business.name, reviews.review_text, reviews.review_date FROM reviews
-JOIN business ON reviews.business_id = business.business_id
-WHERE reviews.review_date > (current_date - interval '1 year') 
-AND business.name = 'Mon Ami Gabi'
-ORDER BY reviews.review_date
-LIMIT 100;
-"""
+  
+print("There are ",n_canadians," Canadians (out of the first 5,100,000 reviews) who have reviewed Mon Ami Gabi in the past year.")
+      
+# extend to full review dataset (here using 5,100,000 review rows out of 17,746,490)
+n_canadians = int(round(n_canadians * 17746490 / 5100000, 0))
+print("Extending this value to the full review dataset, there are approx ",n_canadians," Canadians who have reviewed Mon Ami Gabi in the past year.")
 
 
 #------------------------------------------------------------------------------
@@ -153,36 +162,43 @@ LIMIT 100;
 #------------------------------------------------------------------------------
 
 # Select all "Chipotle Mexican Grill" reviews from the SQL database
-data = postgres_query(" SELECT business.name, reviews.review_text FROM reviews JOIN business ON business.business_id = reviews.business_id WHERE business.name LIKE 'Chipotle Mexican Grill';")
+
+CMG_data = postgres_query("""SELECT business.name, reviews.review_text 
+                          FROM reviews 
+                          JOIN business ON business.business_id = reviews.business_id 
+                          WHERE business.name LIKE 'Chipotle Mexican Grill';""")
+
 
 # Simple tokenizer function
+
 def simple_tokenizer(review):
+    review = review.replace("\n", " ")             # replace newline ch
     review = review.lower()                        # convert to lowercase
+    review = re.sub('[^a-zA-Z]', ' ', review)      # remove non alpha characters
     tokens = review.split()                        # split into words
-    tokens = [t for t in tokens if t.isalpha()]    # remove non-alpha characters
     return tokens
 
 
 # Get a list of tokenized words
 tokenized_words =[]
 
-for rev in data["review_text"]:
+for rev in CMG_data["review_text"]:
     tokens = simple_tokenizer(rev)
     for word in tokens:
         tokenized_words.append(word)
     
 
-# Count occurance of each word in tokenized_words and order by frequency
+# Count occurence of each word in tokenized_words and order by frequency
 word_count = Counter(tokenized_words).most_common()
+
 top_10_chipotle_words = [word[0] for word in word_count[:10]]
 
 print("The top 10 most frequent words in the Chipotle reviews are :")
 for index, word in enumerate(top_10_chipotle_words):
     print(index+1,". ",word)
 
-# from an analytics point of view, this is not very helpful.
-# we should remove stopwords, lemmatize, and stem to get a better idea of the
-# important words
+# From an analytics point of view, this is not very helpful.
+# Remove stopwords & lemmatize.
 
 stop_words = set(stopwords.words('english'))
 lemmatizer = WordNetLemmatizer()
@@ -197,13 +213,13 @@ def better_tokenizer(review):
 
 new_tokenized_words =[]
 
-for rev in data["review_text"]:
+for rev in CMG_data["review_text"]:
     tokens = better_tokenizer(rev)
     for word in tokens:
         new_tokenized_words.append(word)
 
 
-# Count occurance of each word in tokenized_words and order by frequency
+# Count occurence of each word in tokenized_words and order by frequency
 word_count = Counter(new_tokenized_words).most_common()
 top_10_chipotle_words = [word[0] for word in word_count[:10]]
 
@@ -221,17 +237,23 @@ for index, word in enumerate(top_10_chipotle_words):
 #------------------------------------------------------------------------------
 #------------------------------------------------------------------------------
 
+# Total number of reviewers
+n_reviewers = postgres_query("SELECT COUNT(*) FROM reviews").values
+n_reviewers = n_reviewers[0][0]
+
+
 # Get users who reviewed "Mon Ami Gabi"
 MonAmiGabi_reviewers = postgres_query("""
-                           SELECT reviews.uder_id, reviews.business_id, business.name 
+                           SELECT reviews.uder_id
                            FROM reviews 
                            JOIN business on reviews.business_id = business.business_id 
                            WHERE business.name LIKE 'Mon Ami Gabi';
-                           """)
-    
+                           """)    
+
     
 # Get review counts > 10 for each user for restaurants in Ontario
-Ontario_reviews = postgres_query("""SELECT reviews.uder_id, COUNT(*) from reviews
+Ontario_reviewers = postgres_query("""SELECT reviews.uder_id, COUNT(*) 
+                                 FROM reviews
                                  JOIN users ON users.user_id = reviews.uder_id
                                  JOIN business ON business.business_id = reviews.business_id
                                  WHERE business.state_province LIKE 'ON'
@@ -242,10 +264,6 @@ Ontario_reviews = postgres_query("""SELECT reviews.uder_id, COUNT(*) from review
 # Number of users who reviewed "Mon Ami Gabi"
 n_MonAmiGabi_reviewers = MonAmiGabi_reviewers["uder_id"].count()
 
-# Total number of reviewers
-n_reviewers = postgres_query("SELECT COUNT(*) FROM reviews").values
-n_reviewers = n_reviewers[0][0]
-
 # Number of users who reviewed "Mon Ami Gabi" and at least 10 other restaurants in Ontario
 counter = 0
 
@@ -254,11 +272,12 @@ for user in Ontario_reviews["uder_id"]:
         counter = counter + 1
 
 # Calculate percent of MonAmiGabi reviewers that reviewed at least 10 ON restaurants
-percent_of_MonAmiGabi = counter/n_MonAmiGabi_reviewers
+percent_of_MonAmiGabi = (counter*100.0/n_MonAmiGabi_reviewers)
 
-percent_of_total = (counter*100.00/n_reviewers)
+percent_of_total = (counter*100.0/n_reviewers)
 
 print(round(percent_of_total,4),"% of reviewers reviewed both Mon Ami Gabi and at least 10 Ontario restaurants.")
+print(round(percent_of_MonAmiGabi,4),"% of reviewers who reviewed Mon Ami Gabi also reviewed at least 10 Ontario restaurants.")
 
 
 
@@ -268,37 +287,34 @@ print(round(percent_of_total,4),"% of reviewers reviewed both Mon Ami Gabi and a
 #------------------------------------------------------------------------------
 #------------------------------------------------------------------------------
 
-bakeries = postgres_query("""SELECT name, latitude, longitude, categories
+# conda install -c conda-forge folium 
+
+def map_Toronto_business(category):
+    # Takes in category as a string
+    map_data = postgres_query("""SELECT name, latitude, longitude, categories
                           FROM business
                           WHERE city LIKE 'Toronto'
-                          AND categories LIKE '%Bakeries%';""")
+                          AND categories LIKE '%"""+category+"""%';""")
 
-# Use Basemap to plot a map of Toronto with bakery locations identified
+    if map_data.empty:
+        print('There are no businesses in the database with the category "'+category+'".')
+        return None
 
-gmap1 = gmplot.GoogleMapPlotter(43.7, -79.39, 13)
-gmap1.scatter(bakeries["latitude"], bakeries["longitude"])
-gmap1.draw('map.html')
-
-
-plt.figure(figsize=(10,8))
+    # Use folium to draw a map of Toronto, plotting the locations on top
+    TO_map=folium.Map([43.6543, -79.3860], tiles = "Stamen Toner", zoom_start=12)
 
 
+    for i in range(len(map_data)):
+        TO_map.add_child(folium.CircleMarker(location=[map_data["latitude"][i], map_data["longitude"][i]], radius=4, color='red', opacity=0.4))
+    
+    TO_map.save(category+"_Toronto_map.html")
+    print("Your map has been saved as "+category+"_Toronto_map.html in the current directory.")
 
 
-
-
-
-
-plt.savefig('bakery_map.pdf')
-
-
-
-
-plt.figure(figsize = (8,6))
-plt.scatter(bakeries["latitude"], bakeries["longitude"])
-#plt.xlim(43.6, 43.84)
-#plt.ylim(-79.5, -79.2)
-plt.show()
+map_Toronto_business("Hair Salon")
+map_Toronto_business("Pizza")
+map_Toronto_business("Bakeries")
+map_Toronto_business("Steakhouse")
 
 
 #------------------------------------------------------------------------------
@@ -309,11 +325,15 @@ plt.show()
 #------------------------------------------------------------------------------
 
 def ratings_by_year(business_name):
+    """
+    Plots the number of reviews (split up by ratings) for a given business 
+    """
     
     # replace SQL escape character
     business_name = business_name.replace("'", "''")
     
-    bus_data = postgres_query("""SELECT extract(year from reviews.review_date) as review_year, reviews.stars, COUNT(*)
+    bus_data = postgres_query("""SELECT extract(year from reviews.review_date) as review_year, 
+                              reviews.stars, COUNT(*)
                           FROM reviews
                           JOIN business ON reviews.business_id = business.business_id
                           WHERE business.name LIKE '"""+business_name+"""'
@@ -322,7 +342,7 @@ def ratings_by_year(business_name):
     
     if bus_data.empty:
         print('There is no information on the business "'+business_name+'".')
-        return -1;
+        return None;
     
     bus_data = bus_data.fillna(0)
     bus_data = bus_data.astype(int)
@@ -330,8 +350,7 @@ def ratings_by_year(business_name):
     bus_data = bus_data.pivot(index="review_year", columns="stars", values="count")
     years = bus_data.index
     
-    # Set up plot area, leving room on the right for the legend
-#    fig = plt.figure()
+    # Set up plot area, leaving room on the right for the legend
     ax = plt.subplot(111)
     box = ax.get_position()
     ax.set_position([box.x0, box.y0, box.width * 0.8, box.height])
@@ -351,16 +370,182 @@ def ratings_by_year(business_name):
     plt.savefig(business_name+"_Ratings_By_Year.pdf", bbox_inches="tight")
     plt.show()
 
-# Try this out for a few restaurants
+# Try this out for a few businesses
+    
 ratings_by_year("Pai Northern Thai Kitchen")
 ratings_by_year("McDonalds")
 ratings_by_year("Subway")
 ratings_by_year("Mon Ami Gabi")
-ratings_by_year("Starbucks")
 ratings_by_year("ARIA Resort & Casino")
 
-#------------------------------------------------------------------------------
-#------------------------------------------------------------------------------
 
 #------------------------------------------------------------------------------
 #------------------------------------------------------------------------------
+# Given a review text, could you predict how many stars the reviewer will rate a
+# restaurant? We want a prediction model, which can predict the rating(stars) based the
+# review text and the reviewers’ behaviors.
+#------------------------------------------------------------------------------
+#------------------------------------------------------------------------------
+
+# PERFORMING SENTIMENT ANALYSIS ON REVIEW_TEXT
+#------------------------------------------------------------------------------
+
+# get stars and reviews
+review_data = postgres_query("""SELECT reviews.stars, reviews.review_text
+                             FROM reviews 
+                             JOIN business ON business.business_id = reviews.business_id
+                             WHERE business.categories LIKE '%Restaurant%'
+                             LIMIT 100000;""")
+
+# which star-rating has the smallest # of reviews
+counts = review_data["stars"].value_counts()
+max_count = min(counts)
+
+# shuffle values
+review_data=review_data.iloc[:,[0,1]].values
+np.random.shuffle(review_data)
+
+# get even number of reviews for each star-rating
+labels = []
+even_reviews = []
+c1=0
+c2=0
+c3=0
+c4=0
+c5=0
+
+for i in range(len(review_data)):
+    if review_data[i][0] == 1.0 and c1<max_count:
+        labels.append(review_data[i][0])
+        even_reviews.append(review_data[i][1])
+        c1 = c1+1
+    elif review_data[i][0] == 2.0 and c2<max_count:
+        labels.append(review_data[i][0])       
+        even_reviews.append(review_data[i][1])   
+        c2 = c2+1
+    elif review_data[i][0] == 3.0 and c3<max_count:
+        labels.append(review_data[i][0])        
+        even_reviews.append(review_data[i][1])    
+        c3 = c3+1
+    elif review_data[i][0] == 4.0 and c4<max_count:
+        labels.append(review_data[i][0])        
+        even_reviews.append(review_data[i][1])    
+        c4 = c4+1
+    elif review_data[i][0] == 5.0 and c5<max_count:
+        labels.append(review_data[i][0])        
+        even_reviews.append(review_data[i][1])    
+        c5 = c5+1
+
+labels = [ int(l) for l in labels]
+
+stemmer = PorterStemmer()
+stop_words = set(stopwords.words('english'))
+lemmatizer = WordNetLemmatizer()
+
+
+def tokenizer(review):
+    review = review.lower()                                 # convert to lowercase
+    review = re.sub('[^a-zA-Z]', ' ', review)               # remove non-alpha characters            
+    tokens = review.split()                                 # split review into words
+    tokens = [lemmatizer.lemmatize(t) for t in tokens]      # lemmatize
+    tokens = [stemmer.stem(t) for t in tokens]              # stem
+    tokens = [t for t in tokens if len(t) > 2]              # remove short words
+    tokens = [t for t in tokens if t not in stop_words]     # remove stopwords
+    tokens = ' '.join(tokens)
+    return tokens
+
+tokenized_reviews = [] 
+
+for rev in even_reviews:
+    rev = tokenizer(rev)
+    tokenized_reviews.append(rev)
+
+"""
+# Create sparse matrix
+vectorizer = CountVectorizer()
+X = vectorizer.fit_transform(tokenized_reviews).toarray()
+"""
+
+tfidf = TfidfVectorizer(min_df=0.0002)               # words should occur in at least __ % of reviews
+X = tfidf.fit_transform(tokenized_reviews)
+
+# Split data into text and train set
+X_train, X_test, y_train, y_test = train_test_split(X, labels, test_size=0.25)
+
+# Logistic Regression gives good results
+classifier = LogisticRegression()
+classifier.fit(X_train, y_train)
+y_pred = classifier.predict(X_test)
+
+cm = confusion_matrix(y_test, y_pred)
+accuracy = accuracy_score(y_test, y_pred)
+r2 = r2_score(y_test, y_pred)
+
+print("Confusion matrix")
+print(cm)
+print("accuracy = ", accuracy)
+
+
+# Try to predict positive vs negative vs neutral
+#------------------------------------------------------------------------------
+
+# Let's say 1-star and 2-star are negative, 3-star is neutral, 4-star and 5-star positive
+
+pnn_ytest = len(y_test)*[0]
+pnn_ytrain = len(y_train)*[0]
+
+for i in range(len(y_test)):
+    if y_test[i] == 1 or y_test[i] == 2:
+        pnn_ytest[i] = -1
+    if y_test[i] == 4 or y_test[i] == 5:
+        pnn_ytest[i] = 1
+        
+for i in range(len(y_train)):
+    if y_train[i] == 1 or y_train[i] == 2:
+        pnn_ytrain[i] = -1
+    if y_train[i] == 4 or y_train[i] == 5:
+        pnn_ytrain[i] = 1
+    
+# Run logistic regression again
+classifier = LogisticRegression()
+classifier.fit(X_train, pnn_ytrain)
+pnn_ypred = classifier.predict(X_test)
+
+cm = confusion_matrix(pnn_ytest, pnn_ypred)
+accuracy = accuracy_score(pnn_ytest, pnn_ypred)
+r2 = r2_score(pnn_ytest, pnn_ypred)
+
+print("Confusion matrix")
+print(cm)
+print("accuracy = ", accuracy)
+
+
+
+# Try to predict positive vs negative
+#------------------------------------------------------------------------------
+
+# Let's say 1-star and 2-star are negative, 3-, 4-, and 5-star positive
+
+pn_ytest = len(y_test)*[1]
+pn_ytrain = len(y_train)*[1]
+
+for i in range(len(y_test)):
+    if y_test[i] == 1 or y_test[i] == 2:
+        pn_ytest[i] = -1
+        
+for i in range(len(y_train)):
+    if y_train[i] == 1 or y_train[i] == 2:
+        pn_ytrain[i] = -1
+
+    
+# Run logistic regression again
+classifier = LogisticRegression()
+classifier.fit(X_train, pn_ytrain)
+pn_ypred = classifier.predict(X_test)
+
+cm = confusion_matrix(pn_ytest, pn_ypred)
+accuracy = accuracy_score(pn_ytest, pn_ypred)
+
+print("Confusion matrix")
+print(cm)
+print("accuracy = ", accuracy)
