@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
+LIFT CO INTERVIEW ASSESSMENT
 
 Created on Tue Jul 31 17:34:06 2018
 
@@ -14,6 +15,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 import psycopg2
+import folium
 import operator
 import re
 
@@ -85,8 +87,9 @@ data = postgres_query("""SELECT business.name, COUNT(*) AS n_pos_rev
 plt.figure(1, figsize = (5,8))
 plt.gca().invert_yaxis()
 plt.barh(data.name[:10], data.n_pos_rev[:10])
-plt.title("Top 10 Popular Restaurants in Toronto")
-plt.xlabel("Number of Positive Reviews")
+plt.tick_params(labelsize=14)
+plt.title("Top 10 Popular Restaurants in Toronto", fontsize=16)
+plt.xlabel("Number of Positive Reviews", fontsize=14)
 plt.savefig("PopularTorontoRestaurants.pdf", bbox_inches="tight")
 plt.show()
 
@@ -100,60 +103,58 @@ plt.show()
 
 # Get a list of people who have reviewed Mon Ami Gabi in the past year,
 # for people meeting this condition, get the states/provinces of the other places they've reviewed
- 
-# The subquery gets the users who have reviews Mon Ami Gabi in the past year
-# the full query gets the state/provinces of all their review locations
- 
-MAG_reviewers_this_year = postgres_query("""SELECT users.user_id, business.state_province 
-                                         FROM reviews
-                                         JOIN users on users.user_id = reviews.uder_id 
-                                         JOIN business on business.business_id = reviews.business_id
-                                         WHERE users.user_id IN (SELECT reviews.uder_id
-                                                                 FROM reviews
-                                                                 JOIN business ON reviews.business_id = business.business_id
-                                                                 WHERE reviews.review_date > (current_date - interval '1 year') 
-                                                                 AND business.name = 'Mon Ami Gabi'
-                                                                 )
-                                         ;
-                                         """)
-                                         
-user_id_list = []
-for i in range(len(MAG_reviewers_this_year)):
-    if MAG_reviewers_this_year["user_id"][i] not in user_id_list:
-        user_id_list.append(MAG_reviewers_this_year["user_id"][i])                                  
+
+# Subquery selects the users who have reviewed Mon Ami Gabi in the past year
+
+subquery = """(SELECT reviews.user_id
+               FROM reviews
+               JOIN business ON reviews.business_id = business.business_id
+               WHERE reviews.review_date > (current_date - interval '1 year') 
+               AND business.name = 'Mon Ami Gabi'
+               )"""
+
+# List of unique users who reviewed MAG in the past year   
+
+MAG_reviewers = postgres_query(subquery+';')
+MAG_reviewers = list(MAG_reviewers["user_id"])
+
+# Get the state/province for each review made by the users selected in the subquery
+
+MAG_other_review_locs = postgres_query("""SELECT users.user_id, business.state_province 
+                                       FROM reviews
+                                       JOIN users on users.user_id = reviews.user_id 
+                                       JOIN business on business.business_id = reviews.business_id
+                                       WHERE users.user_id IN ("""+subquery+""");
+                                       """)
 
 CAD_prov = ['AB', 'BC', 'MB', 'NB', 'NL', 'NS', 'NT', 'NU', 'ON', 'PE', 'QC', 'SK', 'YT']
 
 
-user_dict = {}
-
 # add users to dictionary
-for user in user_id_list:
+user_dict = {}
+for user in MAG_reviewers:
     user_dict[user] = {"CAD":0, "non_CAD":0}
 
 # for each user, count the number of Canadian businesses and non-Canadian
 # businessed they have reviewed
-for i in range(len(MAG_reviewers_this_year)):
-    user = MAG_reviewers_this_year["user_id"][i]
-    state = MAG_reviewers_this_year["state_province"][i]
+    
+for i in range(len(MAG_other_review_locs)):
+    user = MAG_other_review_locs["user_id"][i]
+    state = MAG_other_review_locs["state_province"][i]
     if state in CAD_prov:
         user_dict[user]["CAD"] = user_dict[user]["CAD"] + 1
     else:
         user_dict[user]["non_CAD"] = user_dict[user]["non_CAD"] + 1
     
-    
+# if a user has reviewed more Canadian than non-Canadian businesses, they're Canadian
+
 n_canadians = 0
 for user in user_dict:
     if user_dict[user]["CAD"] > user_dict[user]["non_CAD"]:
         n_canadians = n_canadians + 1
 
-  
-print("There are ",n_canadians," Canadians (out of the first 5,100,000 reviews) who have reviewed Mon Ami Gabi in the past year.")
+print("There are ",n_canadians," Canadians who have reviewed Mon Ami Gabi in the past year.")
       
-# extend to full review dataset (here using 5,100,000 review rows out of 17,746,490)
-n_canadians = int(round(n_canadians * 17746490 / 5100000, 0))
-print("Extending this value to the full review dataset, there are approx ",n_canadians," Canadians who have reviewed Mon Ami Gabi in the past year.")
-
 
 #------------------------------------------------------------------------------
 #------------------------------------------------------------------------------
@@ -163,7 +164,7 @@ print("Extending this value to the full review dataset, there are approx ",n_can
 
 # Select all "Chipotle Mexican Grill" reviews from the SQL database
 
-CMG_data = postgres_query("""SELECT business.name, reviews.review_text 
+CMG_data = postgres_query("""SELECT reviews.review_text 
                           FROM reviews 
                           JOIN business ON business.business_id = reviews.business_id 
                           WHERE business.name LIKE 'Chipotle Mexican Grill';""")
@@ -238,37 +239,38 @@ for index, word in enumerate(top_10_chipotle_words):
 #------------------------------------------------------------------------------
 
 # Total number of reviewers
-n_reviewers = postgres_query("SELECT COUNT(*) FROM reviews").values
+n_reviewers = postgres_query("SELECT COUNT(DISTINCT(user_id)) FROM reviews;").values
 n_reviewers = n_reviewers[0][0]
 
 
 # Get users who reviewed "Mon Ami Gabi"
 MonAmiGabi_reviewers = postgres_query("""
-                           SELECT reviews.uder_id
+                           SELECT reviews.user_id
                            FROM reviews 
                            JOIN business on reviews.business_id = business.business_id 
                            WHERE business.name LIKE 'Mon Ami Gabi';
                            """)    
 
     
-# Get review counts > 10 for each user for restaurants in Ontario
-Ontario_reviewers = postgres_query("""SELECT reviews.uder_id, COUNT(*) 
+# Get users who reviewed at least 10 restaurantts in ON
+Ontario_reviewers = postgres_query("""SELECT reviews.user_id, COUNT(*) 
                                  FROM reviews
-                                 JOIN users ON users.user_id = reviews.uder_id
+                                 JOIN users ON users.user_id = reviews.user_id
                                  JOIN business ON business.business_id = reviews.business_id
                                  WHERE business.state_province LIKE 'ON'
-                                 GROUP BY reviews.uder_id
+                                 AND business.categories LIKE '%Restaurant%'
+                                 GROUP BY reviews.user_id
                                  HAVING COUNT(*) >= 10
                                  """)
 
 # Number of users who reviewed "Mon Ami Gabi"
-n_MonAmiGabi_reviewers = MonAmiGabi_reviewers["uder_id"].count()
+n_MonAmiGabi_reviewers = MonAmiGabi_reviewers["user_id"].count()
 
 # Number of users who reviewed "Mon Ami Gabi" and at least 10 other restaurants in Ontario
 counter = 0
 
-for user in Ontario_reviews["uder_id"]:
-    if user in MonAmiGabi_reviewers["uder_id"].values:
+for user in Ontario_reviewers["user_id"]:
+    if user in MonAmiGabi_reviewers["user_id"].values:
         counter = counter + 1
 
 # Calculate percent of MonAmiGabi reviewers that reviewed at least 10 ON restaurants
@@ -290,7 +292,13 @@ print(round(percent_of_MonAmiGabi,4),"% of reviewers who reviewed Mon Ami Gabi a
 # conda install -c conda-forge folium 
 
 def map_Toronto_business(category):
-    # Takes in category as a string
+    
+    """
+    Takes in category as a string and creates an .html map of Toronto
+    with "category" locations identified
+    """
+    
+    
     map_data = postgres_query("""SELECT name, latitude, longitude, categories
                           FROM business
                           WHERE city LIKE 'Toronto'
@@ -315,6 +323,7 @@ map_Toronto_business("Hair Salon")
 map_Toronto_business("Pizza")
 map_Toronto_business("Bakeries")
 map_Toronto_business("Steakhouse")
+map_Toronto_business("Fitness")
 
 
 #------------------------------------------------------------------------------
@@ -334,11 +343,11 @@ def ratings_by_year(business_name):
     
     bus_data = postgres_query("""SELECT extract(year from reviews.review_date) as review_year, 
                               reviews.stars, COUNT(*)
-                          FROM reviews
-                          JOIN business ON reviews.business_id = business.business_id
-                          WHERE business.name LIKE '"""+business_name+"""'
-                          GROUP BY review_year, reviews.stars;
-                          """)
+                              FROM reviews
+                              JOIN business ON reviews.business_id = business.business_id
+                              WHERE business.name LIKE '"""+business_name+"""'
+                              GROUP BY review_year, reviews.stars;
+                              """)
     
     if bus_data.empty:
         print('There is no information on the business "'+business_name+'".')
@@ -373,7 +382,6 @@ def ratings_by_year(business_name):
 # Try this out for a few businesses
     
 ratings_by_year("Pai Northern Thai Kitchen")
-ratings_by_year("McDonalds")
 ratings_by_year("Subway")
 ratings_by_year("Mon Ami Gabi")
 ratings_by_year("ARIA Resort & Casino")
@@ -395,17 +403,24 @@ review_data = postgres_query("""SELECT reviews.stars, reviews.review_text
                              FROM reviews 
                              JOIN business ON business.business_id = reviews.business_id
                              WHERE business.categories LIKE '%Restaurant%'
-                             LIMIT 100000;""")
+                             LIMIT 200000;""")
 
 # which star-rating has the smallest # of reviews
 counts = review_data["stars"].value_counts()
 max_count = min(counts)
+plt.bar(["1-star","2-star","3-star","4-star","5-star"], [counts[1], counts[2], counts[3], counts[4], counts[5]])
+plt.xlabel("Rating", fontsize=12)
+plt.ylabel("Number of Reviews", fontsize=12)
+plt.title("Breakdown of Restaurant Reviews", fontsize=14)
+plt.savefig("RestaurantRatings.pdf", bbox_inches="tight")
+plt.show()
+
 
 # shuffle values
 review_data=review_data.iloc[:,[0,1]].values
 np.random.shuffle(review_data)
 
-# get even number of reviews for each star-rating
+# get equal number of reviews for each star-rating
 labels = []
 even_reviews = []
 c1=0
@@ -438,19 +453,20 @@ for i in range(len(review_data)):
 
 labels = [ int(l) for l in labels]
 
+
+# Tokenize the review data
 stemmer = PorterStemmer()
 stop_words = set(stopwords.words('english'))
 lemmatizer = WordNetLemmatizer()
 
-
 def tokenizer(review):
     review = review.lower()                                 # convert to lowercase
-    review = re.sub('[^a-zA-Z]', ' ', review)               # remove non-alpha characters            
+    review = re.sub('[^a-zA-Z]', ' ', review)               # remove non-alpha characters 
     tokens = review.split()                                 # split review into words
+    tokens = [t for t in tokens if len(t) > 2]              # remove short words
+    tokens = [t for t in tokens if t not in stop_words]     # remove stopwords         
     tokens = [lemmatizer.lemmatize(t) for t in tokens]      # lemmatize
     tokens = [stemmer.stem(t) for t in tokens]              # stem
-    tokens = [t for t in tokens if len(t) > 2]              # remove short words
-    tokens = [t for t in tokens if t not in stop_words]     # remove stopwords
     tokens = ' '.join(tokens)
     return tokens
 
@@ -460,12 +476,7 @@ for rev in even_reviews:
     rev = tokenizer(rev)
     tokenized_reviews.append(rev)
 
-"""
 # Create sparse matrix
-vectorizer = CountVectorizer()
-X = vectorizer.fit_transform(tokenized_reviews).toarray()
-"""
-
 tfidf = TfidfVectorizer(min_df=0.0002)               # words should occur in at least __ % of reviews
 X = tfidf.fit_transform(tokenized_reviews)
 
