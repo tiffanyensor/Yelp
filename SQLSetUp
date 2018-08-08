@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
+LIFT CO INTERVIEW ASSESSMENT
 
 Created on Tue Jul 31 17:34:06 2018
 
@@ -127,7 +128,7 @@ insert_data(dataset, table_name, col_names)
 
 filename = 'yelp_academic_dataset_review.json'
 table_name = "reviews"
-col_names = ["review_id", "uder_id", "business_id", "stars", "review_date", "review_text", "useful", "funny", "cool"]
+col_names = ["review_id", "user_id", "business_id", "stars", "review_date", "review_text", "useful", "funny", "cool"]
 col_types = ["VARCHAR(100)", "VARCHAR(100)", "VARCHAR(100)", "FLOAT", "DATE", "VARCHAR(9999)", "INT", "INT", "INT"]
 
 create_table(table_name, col_names, col_types)
@@ -152,9 +153,7 @@ def insert_json_in_sections(filename, table_name, column_names):
             print(full_counter," rows have been uploaded.")
     # everything remaining 
     insert_data(current_section, table_name, column_names) 
-   
-insert_json_in_sections(filename, table_name, col_names)         
-
+                 
 
 # postgres_command("DROP TABLE reviews;")
 # postgres_command("TRUNCATE TABLE reviews;")
