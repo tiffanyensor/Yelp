@@ -1,8 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-LIFT CO INTERVIEW ASSESSMENT
-
 Created on Tue Jul 31 17:34:06 2018
 
 @author: tiffanyensor
@@ -16,7 +14,6 @@ import matplotlib.pyplot as plt
 
 import psycopg2
 import folium
-import operator
 import re
 
 from collections import Counter
@@ -24,13 +21,11 @@ from collections import Counter
 from nltk.corpus import stopwords
 from nltk.stem import WordNetLemmatizer
 from nltk.stem.porter import PorterStemmer
-from nltk.sentiment.vader import SentimentIntensityAnalyzer
 
 from sklearn.feature_extraction.text import CountVectorizer
 from sklearn.model_selection import train_test_split
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import confusion_matrix, accuracy_score, classification_report, r2_score
-from sklearn.naive_bayes import MultinomialNB
 from sklearn.feature_extraction.text import TfidfVectorizer
 
 SQL_password = 'password'
@@ -199,15 +194,13 @@ for index, word in enumerate(top_10_chipotle_words):
     print(index+1,". ",word)
 
 # From an analytics point of view, this is not very helpful.
-# Remove stopwords & lemmatize.
+# Remove stopwords.
 
 stop_words = set(stopwords.words('english'))
-lemmatizer = WordNetLemmatizer()
 
 # Tokenizer function
 def better_tokenizer(review):
     tokens = simple_tokenizer(review)
-    tokens = [lemmatizer.lemmatize(t) for t in tokens]      # lemmatize
     tokens = [t for t in tokens if len(t) > 2]              # remove short words
     tokens = [t for t in tokens if t not in stop_words]     # remove stopwords
     return tokens
@@ -324,7 +317,7 @@ map_Toronto_business("Pizza")
 map_Toronto_business("Bakeries")
 map_Toronto_business("Steakhouse")
 map_Toronto_business("Fitness")
-
+map_Toronto_business("Restaurant")
 
 #------------------------------------------------------------------------------
 #------------------------------------------------------------------------------
@@ -385,6 +378,7 @@ ratings_by_year("Pai Northern Thai Kitchen")
 ratings_by_year("Subway")
 ratings_by_year("Mon Ami Gabi")
 ratings_by_year("ARIA Resort & Casino")
+ratings_by_year("Blockbuster")
 
 
 #------------------------------------------------------------------------------
@@ -403,7 +397,7 @@ review_data = postgres_query("""SELECT reviews.stars, reviews.review_text
                              FROM reviews 
                              JOIN business ON business.business_id = reviews.business_id
                              WHERE business.categories LIKE '%Restaurant%'
-                             LIMIT 200000;""")
+                             LIMIT 400000;""")
 
 # which star-rating has the smallest # of reviews
 counts = review_data["stars"].value_counts()
@@ -465,7 +459,7 @@ def tokenizer(review):
     tokens = review.split()                                 # split review into words
     tokens = [t for t in tokens if len(t) > 2]              # remove short words
     tokens = [t for t in tokens if t not in stop_words]     # remove stopwords         
-    tokens = [lemmatizer.lemmatize(t) for t in tokens]      # lemmatize
+#    tokens = [lemmatizer.lemmatize(t) for t in tokens]      # lemmatize
     tokens = [stemmer.stem(t) for t in tokens]              # stem
     tokens = ' '.join(tokens)
     return tokens
@@ -477,6 +471,7 @@ for rev in even_reviews:
     tokenized_reviews.append(rev)
 
 # Create sparse matrix
+    tfidf = TfidfVectorizer()  
 tfidf = TfidfVectorizer(min_df=0.0002)               # words should occur in at least __ % of reviews
 X = tfidf.fit_transform(tokenized_reviews)
 
